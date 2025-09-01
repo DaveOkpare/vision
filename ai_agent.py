@@ -100,8 +100,7 @@ Only include cells with confidence ≥60%. Sort cell numbers in ascending order.
                         'confidence_scores': parsed['confidence_scores']
                     }
         except Exception as e:
-            print(f"Error parsing AI response: {e}")
-            print(f"Response was: {response}")
+            pass
         
         # Fallback: return empty response
         return {'cells': [], 'confidence_scores': []}

@@ -42,8 +42,8 @@ def overlay_grid_on_image(image: Image.Image, rows: int = 4, cols: int = 3) -> T
             draw.rectangle([x, y, x + cell_width, y + cell_height], outline="red", width=2)
             
             # Add cell number label
-            # Try to use a reasonable font size
-            font_size = min(cell_width, cell_height) // 8
+            # Try to use a reasonable font size, minimum 10 to avoid division by zero
+            font_size = max(10, min(cell_width, cell_height) // 8)
             try:
                 # Try to use a system font
                 font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)

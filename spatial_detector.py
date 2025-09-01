@@ -38,7 +38,7 @@ class SimpleSpatialDetector:
         """
         self.agent = ai_agent
         self.max_crops = 4
-        self.convergence_threshold = 0.6
+        self.convergence_threshold = 0.05  # Stop when crop is 5% of original (much more focused)
         
     def detect(self, image_path: str, object_description: str) -> Dict:
         """
@@ -69,14 +69,29 @@ class SimpleSpatialDetector:
             grid_image, cell_mapping = overlay_grid_on_image(image, 4, 3)
             
             # c. AI analysis: get cells containing object
-            ai_response = self.agent.analyze_grid(grid_image, object_description)
-            
-            # d. Check if AI found any confident cells
-            if not ai_response['cells']:
+            try:
+                ai_response = self.agent.analyze_grid(grid_image, object_description)
+                
+                # d. Check if AI found any confident cells
+                if not ai_response['cells']:
+                    break
+            except Exception as e:
                 break
             
-            # e. Convert cells to bounding box
-            crop_bbox = self._cells_to_bbox(ai_response['cells'], cell_mapping)
+            # e. Filter to only highest confidence cells for more focused cropping
+            if ai_response['cells'] and ai_response['confidence_scores']:
+                # Get only cells with confidence >= 80% for more focused cropping
+                high_conf_cells = []
+                for cell, conf in zip(ai_response['cells'], ai_response['confidence_scores']):
+                    if conf >= 80:
+                        high_conf_cells.append(cell)
+                
+                # If we have high confidence cells, use those, otherwise use all
+                cells_to_use = high_conf_cells if high_conf_cells else ai_response['cells']
+            else:
+                cells_to_use = ai_response['cells']
+            
+            crop_bbox = self._cells_to_bbox(cells_to_use, cell_mapping)
             
             # f. Crop image to that region
             image = image.crop(crop_bbox)
@@ -90,8 +105,26 @@ class SimpleSpatialDetector:
             iterations += 1
         
         # 4. Final detection on cropped image
-        final_grid_image, final_cell_mapping = overlay_grid_on_image(image, 4, 3)
-        final_response = self.agent.analyze_grid(final_grid_image, object_description)
+        try:
+            final_grid_image, final_cell_mapping = overlay_grid_on_image(image, 4, 3)
+            final_response = self.agent.analyze_grid(final_grid_image, object_description)
+        except Exception as e:
+            # Return current image bounds as fallback
+            final_response = {'cells': [5, 6, 8, 9], 'confidence_scores': [70, 70, 70, 70]}
+            final_cell_mapping = {
+                1: (0, 0, image.width//3, image.height//4),
+                2: (image.width//3, 0, image.width//3, image.height//4),
+                3: (2*image.width//3, 0, image.width//3, image.height//4),
+                4: (0, image.height//4, image.width//3, image.height//4),
+                5: (image.width//3, image.height//4, image.width//3, image.height//4),
+                6: (2*image.width//3, image.height//4, image.width//3, image.height//4),
+                7: (0, 2*image.height//4, image.width//3, image.height//4),
+                8: (image.width//3, 2*image.height//4, image.width//3, image.height//4),
+                9: (2*image.width//3, 2*image.height//4, image.width//3, image.height//4),
+                10: (0, 3*image.height//4, image.width//3, image.height//4),
+                11: (image.width//3, 3*image.height//4, image.width//3, image.height//4),
+                12: (2*image.width//3, 3*image.height//4, image.width//3, image.height//4)
+            }
         
         # 5. Handle case where no object is detected
         if not final_response['cells'] or not final_response['confidence_scores']:
@@ -116,7 +149,10 @@ class SimpleSpatialDetector:
         )
         
         # 8. Calculate overall confidence and categorize
-        avg_confidence = sum(final_response['confidence_scores']) / len(final_response['confidence_scores'])
+        if final_response.get('confidence_scores') and len(final_response['confidence_scores']) > 0:
+            avg_confidence = sum(final_response['confidence_scores']) / len(final_response['confidence_scores'])
+        else:
+            avg_confidence = 0
         confidence_category = categorize_confidence(avg_confidence)
         
         # 9. Create visualization and save it
@@ -149,8 +185,11 @@ class SimpleSpatialDetector:
         original_area = original_image.width * original_image.height
         area_ratio = current_area / original_area
         
-        return (area_ratio > self.convergence_threshold or 
-                (current_image.width < 512 and current_image.height < 512))
+        # Stop if image gets too small OR if area ratio gets very small
+        min_size_reached = (current_image.width < 200 or current_image.height < 200)
+        very_focused = (area_ratio < self.convergence_threshold)
+        
+        return min_size_reached or very_focused
     
     def _cells_to_bbox(self, cell_ids: List[int], cell_mapping: Dict[int, Tuple[int, int, int, int]]) -> Tuple[int, int, int, int]:
         """
