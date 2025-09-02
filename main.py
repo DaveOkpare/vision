@@ -8,12 +8,26 @@ def main():
     """Main entry point for the spatial reasoning vision system."""
     # Check for required arguments
     if len(sys.argv) < 3:
-        print("Usage: python main.py <image_path> <object_description>")
-        print("Example: python main.py test_image.jpg 'red car'")
+        print("Usage:")
+        print("  Single object: python main.py <image_path> <object_description>")
+        print("  Multiple objects: python main.py <image_path> --multi <obj1> <obj2> [obj3...]")
+        print("\nExamples:")
+        print("  python main.py test_image.jpg 'red car'")
+        print("  python main.py test_image.jpg --multi 'red car' 'person' 'traffic light'")
         sys.exit(1)
     
     image_path = sys.argv[1]
-    object_description = sys.argv[2]
+    
+    # Check if multi-object detection is requested
+    if len(sys.argv) > 2 and sys.argv[2] == '--multi':
+        if len(sys.argv) < 4:
+            print("Error: At least one object description is required with --multi flag")
+            sys.exit(1)
+        multi_mode = True
+        object_descriptions = sys.argv[3:]
+    else:
+        multi_mode = False
+        object_description = sys.argv[2]
     
     # Check if image file exists
     if not os.path.exists(image_path):
@@ -36,23 +50,54 @@ def main():
         print(f"Creating spatial detector...")
         detector = SimpleSpatialDetector(agent)
         
-        # Run detection
-        print(f"Detecting '{object_description}' in '{image_path}'...")
-        result = detector.detect(image_path, object_description)
-        
-        # Display results
-        print("\n" + "="*50)
-        print("DETECTION RESULTS")
-        print("="*50)
-        print(f"Object: {object_description}")
-        print(f"Confidence: {result['confidence']} ({result['confidence_score']:.1f}%)")
-        print(f"Bounding Box: {result['bbox']}")
-        print(f"Iterations: {result['iterations']}")
-        
-        if result['result_image_path']:
-            print(f"Result image saved to: {result['result_image_path']}")
+        # Run appropriate detection mode
+        if multi_mode:
+            # Multi-object detection
+            print(f"Detecting {len(object_descriptions)} objects in '{image_path}':")
+            for i, obj in enumerate(object_descriptions, 1):
+                print(f"  {i}. {obj}")
+            
+            results = detector.detect_multiple(image_path, object_descriptions)
+            
+            # Display results
+            print("\n" + "="*60)
+            print("MULTI-OBJECT DETECTION RESULTS")
+            print("="*60)
+            
+            if results:
+                print(f"Successfully detected {len(results)} out of {len(object_descriptions)} objects:\n")
+                
+                for i, result in enumerate(results, 1):
+                    print(f"{i}. Object: {result['object']}")
+                    print(f"   Confidence: {result['confidence']} ({result['confidence_score']:.1f}%)")
+                    print(f"   Bounding Box: {result['bbox']}")
+                    print(f"   Iterations: {result['iterations']}")
+                    print(f"   Individual result: {result['result_image_path']}")
+                    print()
+                
+                if 'combined_result_image_path' in results[0]:
+                    print(f"Combined visualization saved to: {results[0]['combined_result_image_path']}")
+            else:
+                print("No objects were detected with sufficient confidence.")
+                print("Try adjusting object descriptions or using different images.")
         else:
-            print("No object detected - no result image created")
+            # Single object detection
+            print(f"Detecting '{object_description}' in '{image_path}'...")
+            result = detector.detect(image_path, object_description)
+            
+            # Display results
+            print("\n" + "="*50)
+            print("DETECTION RESULTS")
+            print("="*50)
+            print(f"Object: {object_description}")
+            print(f"Confidence: {result['confidence']} ({result['confidence_score']:.1f}%)")
+            print(f"Bounding Box: {result['bbox']}")
+            print(f"Iterations: {result['iterations']}")
+            
+            if result['result_image_path']:
+                print(f"Result image saved to: {result['result_image_path']}")
+            else:
+                print("No object detected - no result image created")
         
     except Exception as e:
         print(f"Error during detection: {e}")

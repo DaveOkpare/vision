@@ -272,3 +272,104 @@ class SimpleSpatialDetector:
             draw.text((label_x, label_y), label, fill=color)
         
         return result_image
+    
+    def detect_multiple(self, image_path: str, object_descriptions: List[str]) -> List[Dict]:
+        """
+        Detect multiple objects in an image using multiple single-object runs.
+        
+        Args:
+            image_path: Path to input image
+            object_descriptions: List of object descriptions to detect
+            
+        Returns:
+            List of detection results, each containing object name, bounding box, and confidence
+        """
+        # 1. Load original image once
+        original_image = Image.open(image_path).convert("RGB")
+        
+        # 2. Run single detection for each object
+        detections = []
+        for i, obj_desc in enumerate(object_descriptions):
+            print(f"Detecting object {i+1}/{len(object_descriptions)}: {obj_desc}")
+            detection = self.detect(image_path, obj_desc)
+            
+            # 3. Add object identifier to result
+            detection["object"] = obj_desc
+            detection["detection_id"] = i
+            
+            # 4. Only include confident detections to reduce false positives
+            if detection["confidence"] not in ["uncertain", "low"]:
+                detections.append(detection)
+        
+        # 5. Create combined visualization image
+        if detections:
+            combined_result_image = self._draw_multiple_bboxes_on_original(
+                original_image, detections
+            )
+            combined_output_path = image_path.replace('.', '_multi_detected.')
+            combined_result_image.save(combined_output_path)
+            
+            # Add combined visualization to all detections
+            for detection in detections:
+                detection["combined_result_image_path"] = combined_output_path
+                detection["combined_result_image"] = combined_result_image
+        
+        return detections
+    
+    def _draw_multiple_bboxes_on_original(self, image: Image.Image, detections: List[Dict]) -> Image.Image:
+        """
+        Draw multiple bounding boxes on original image.
+        
+        Args:
+            image: Original image
+            detections: List of detection results with bboxes and object names
+            
+        Returns:
+            Image with all bboxes and labels drawn
+        """
+        result_image = image.copy()
+        draw = ImageDraw.Draw(result_image)
+        
+        # Color palette for different objects
+        colors = ["green", "blue", "red", "orange", "purple", "brown", "pink", "gray"]
+        
+        try:
+            # Try to use a system font
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 18)
+        except:
+            # Fall back to default font
+            try:
+                font = ImageFont.load_default()
+            except:
+                font = None
+        
+        label_y_offset = 0  # To stagger labels vertically
+        
+        for i, detection in enumerate(detections):
+            bbox = detection["bbox"]
+            obj_name = detection["object"]
+            confidence = detection["confidence"]
+            
+            # Use different color for each object
+            color = colors[i % len(colors)]
+            
+            # Draw bounding box
+            draw.rectangle(bbox, outline=color, width=3)
+            
+            # Create label with object name and confidence
+            label = f"{obj_name} ({confidence})"
+            label_x = bbox[0]
+            label_y = max(0, bbox[1] - 25 - label_y_offset)
+            
+            # Draw label background and text
+            if font:
+                bbox_text = draw.textbbox((label_x, label_y), label, font=font)
+                draw.rectangle(bbox_text, fill=color)
+                draw.text((label_x, label_y), label, fill="white", font=font)
+            else:
+                draw.text((label_x, label_y), label, fill=color)
+            
+            # Stagger next label to avoid overlap
+            label_y_offset += 30
+        
+        return result_image
