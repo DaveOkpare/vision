@@ -64,7 +64,7 @@ export function ImageUpload({ onFileSelected, previewUrl, setPreviewUrl, isLoadi
       a.click()
       a.remove()
       URL.revokeObjectURL(blobUrl)
-    } catch (e) {
+    } catch {
       // Fallback: navigate to the URL
       window.open(url, "_blank")
     }

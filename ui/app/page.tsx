@@ -44,8 +44,8 @@ export default function Home() {
         throw new Error(json?.error || "Request failed")
       }
       setData(json)
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong")
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
       setIsLoading(false)
     }

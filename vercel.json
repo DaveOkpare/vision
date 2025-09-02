@@ -1,4 +1,9 @@
 {
   "buildCommand": "cd ui && npm install && npm run build",
-  "outputDirectory": "ui/out"
+  "outputDirectory": "ui/out",
+  "functions": {
+    "api/index.py": {
+      "runtime": "python3.9"
+    }
+  }
 }

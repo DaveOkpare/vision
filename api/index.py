@@ -52,11 +52,11 @@ class ApiResponse(BaseModel):
     results: List[DetectionResult]
     message: Optional[str] = None
 
-@app.get("/api/")
+@app.get("/")
 async def root():
     return {"message": "Vision Detection API is running"}
 
-@app.post("/api/detect", response_model=ApiResponse)
+@app.post("/detect", response_model=ApiResponse)
 async def detect_objects(file: UploadFile = File(...), targets: str = Form(...)):
     """Detect objects in uploaded image using actual detection logic"""
     
