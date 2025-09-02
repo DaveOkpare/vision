@@ -2,7 +2,7 @@
 
 import React from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -54,7 +54,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen w-full px-6 py-10 md:px-10">
-      <div className="mx-auto w-full max-w-4xl grid gap-6">
+      <div className="mx-auto w-full max-w-5xl grid gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Image Object Detection</CardTitle>
@@ -112,7 +112,7 @@ export default function Home() {
                   <img
                     src={data.imageUrl}
                     alt="Uploaded"
-                    className="rounded-md border max-h-80 object-contain"
+                    className="rounded-md border w-full h-auto object-contain md:col-span-2"
                   />
                   <div className="text-sm">
                     <div className="mb-2 font-medium">Targets</div>
@@ -123,6 +123,15 @@ export default function Home() {
                         <li className="text-muted-foreground">None provided</li>
                       )}
                     </ul>
+                    <div className="mt-4">
+                      <a
+                        href={data.imageUrl}
+                        download
+                        className={buttonVariants({ variant: "default", size: "default" })}
+                      >
+                        Download image
+                      </a>
+                    </div>
                   </div>
                 </div>
                 <div className="grid gap-2">
