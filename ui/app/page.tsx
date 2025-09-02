@@ -2,10 +2,11 @@
 
 import React from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { ImageUpload } from "@/components/image-upload"
+import { Github } from "lucide-react"
 
 type ApiResult = {
   ok: boolean
@@ -55,8 +56,22 @@ export default function Home() {
       <div className="mx-auto w-full max-w-5xl grid gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>Image Object Detection</CardTitle>
-            <CardDescription>Upload an image and specify items to detect (comma-separated).</CardDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Image Object Detection</CardTitle>
+                <CardDescription>Upload an image and specify items to detect (comma-separated).</CardDescription>
+              </div>
+              <a
+                href={process.env.NEXT_PUBLIC_GITHUB_URL ?? "https://github.com"}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View project on GitHub"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                <Github className="mr-2 h-4 w-4" />
+                GitHub
+              </a>
+            </div>
           </CardHeader>
           <CardContent>
             <form onSubmit={onSubmit} className="grid gap-5">
