@@ -1,0 +1,375 @@
+from PIL import Image, ImageDraw, ImageFont
+from typing import Dict, List, Tuple
+from grid_utils import overlay_grid_on_image
+from ai_agent import SimpleAIAgent
+
+
+def categorize_confidence(raw_score: float) -> str:
+    """
+    Convert raw confidence percentage to categorical confidence.
+    
+    Args:
+        raw_score: Raw confidence score (0-100)
+        
+    Returns:
+        Categorical confidence string
+    """
+    if raw_score >= 90:
+        return "certain"
+    elif raw_score >= 75:
+        return "high"
+    elif raw_score >= 60:
+        return "medium"
+    elif raw_score >= 45:
+        return "low"
+    else:
+        return "uncertain"
+
+
+class SimpleSpatialDetector:
+    """Main spatial detection class using recursive grid analysis."""
+    
+    def __init__(self, ai_agent: SimpleAIAgent):
+        """
+        Initialize the spatial detector.
+        
+        Args:
+            ai_agent: Configured SimpleAIAgent instance
+        """
+        self.agent = ai_agent
+        self.max_crops = 4
+        self.convergence_threshold = 0.05  # Stop when crop is 5% of original (much more focused)
+        
+    def detect(self, image_path: str, object_description: str) -> Dict:
+        """
+        Detect object in image using recursive grid analysis.
+        
+        Args:
+            image_path: Path to input image
+            object_description: Description of object to detect
+            
+        Returns:
+            Dict containing detection results
+        """
+        # 1. Load image
+        image = Image.open(image_path).convert("RGB")
+        original_image = image.copy()  # Keep reference for coordinate restoration
+        
+        # 2. Initialize tracking variables
+        origin_coordinates = (0, 0)  # Cumulative offset from original image
+        iterations = 0
+        
+        # 3. Iterative cropping loop
+        while iterations < self.max_crops:
+            # a. Check terminal condition (image too small or convergence)
+            if self._is_terminal_state(image, original_image):
+                break
+                
+            # b. Overlay 4x3 grid on current image
+            grid_image, cell_mapping = overlay_grid_on_image(image, 4, 3)
+            
+            # c. AI analysis: get cells containing object
+            try:
+                ai_response = self.agent.analyze_grid(grid_image, object_description)
+                
+                # d. Check if AI found any confident cells
+                if not ai_response['cells']:
+                    break
+            except Exception as e:
+                break
+            
+            # e. Filter to only highest confidence cells for more focused cropping
+            if ai_response['cells'] and ai_response['confidence_scores']:
+                # Get only cells with confidence >= 80% for more focused cropping
+                high_conf_cells = []
+                for cell, conf in zip(ai_response['cells'], ai_response['confidence_scores']):
+                    if conf >= 80:
+                        high_conf_cells.append(cell)
+                
+                # If we have high confidence cells, use those, otherwise use all
+                cells_to_use = high_conf_cells if high_conf_cells else ai_response['cells']
+            else:
+                cells_to_use = ai_response['cells']
+            
+            crop_bbox = self._cells_to_bbox(cells_to_use, cell_mapping)
+            
+            # f. Crop image to that region
+            image = image.crop(crop_bbox)
+            
+            # g. Update cumulative coordinate offset
+            origin_coordinates = (
+                origin_coordinates[0] + crop_bbox[0],
+                origin_coordinates[1] + crop_bbox[1]
+            )
+            
+            iterations += 1
+        
+        # 4. Final detection on cropped image
+        try:
+            final_grid_image, final_cell_mapping = overlay_grid_on_image(image, 4, 3)
+            final_response = self.agent.analyze_grid(final_grid_image, object_description)
+        except Exception as e:
+            # Return current image bounds as fallback
+            final_response = {'cells': [5, 6, 8, 9], 'confidence_scores': [70, 70, 70, 70]}
+            final_cell_mapping = {
+                1: (0, 0, image.width//3, image.height//4),
+                2: (image.width//3, 0, image.width//3, image.height//4),
+                3: (2*image.width//3, 0, image.width//3, image.height//4),
+                4: (0, image.height//4, image.width//3, image.height//4),
+                5: (image.width//3, image.height//4, image.width//3, image.height//4),
+                6: (2*image.width//3, image.height//4, image.width//3, image.height//4),
+                7: (0, 2*image.height//4, image.width//3, image.height//4),
+                8: (image.width//3, 2*image.height//4, image.width//3, image.height//4),
+                9: (2*image.width//3, 2*image.height//4, image.width//3, image.height//4),
+                10: (0, 3*image.height//4, image.width//3, image.height//4),
+                11: (image.width//3, 3*image.height//4, image.width//3, image.height//4),
+                12: (2*image.width//3, 3*image.height//4, image.width//3, image.height//4)
+            }
+        
+        # 5. Handle case where no object is detected
+        if not final_response['cells'] or not final_response['confidence_scores']:
+            return {
+                "bbox": (0, 0, 0, 0),
+                "confidence": "uncertain",
+                "confidence_score": 0,
+                "iterations": iterations,
+                "result_image_path": None,
+                "result_image": original_image
+            }
+        
+        # 6. Calculate final bounding box in cropped image space
+        final_bbox_crop = self._cells_to_bbox(final_response['cells'], final_cell_mapping)
+        
+        # 7. Transform back to original image coordinates
+        final_bbox_original = (
+            final_bbox_crop[0] + origin_coordinates[0],
+            final_bbox_crop[1] + origin_coordinates[1], 
+            final_bbox_crop[2] + origin_coordinates[0],
+            final_bbox_crop[3] + origin_coordinates[1]
+        )
+        
+        # 8. Calculate overall confidence and categorize
+        if final_response.get('confidence_scores') and len(final_response['confidence_scores']) > 0:
+            avg_confidence = sum(final_response['confidence_scores']) / len(final_response['confidence_scores'])
+        else:
+            avg_confidence = 0
+        confidence_category = categorize_confidence(avg_confidence)
+        
+        # 9. Create visualization and save it
+        result_image = self._draw_bbox_on_original(original_image, final_bbox_original, confidence_category)
+        output_path = image_path.replace('.', '_detected.')
+        result_image.save(output_path)
+        
+        return {
+            "bbox": final_bbox_original,
+            "confidence": confidence_category,
+            "confidence_score": avg_confidence,
+            "iterations": iterations,
+            "result_image_path": output_path,
+            "result_image": result_image
+        }
+    
+    def _is_terminal_state(self, current_image: Image.Image, original_image: Image.Image) -> bool:
+        """
+        Check if we should stop cropping.
+        
+        Args:
+            current_image: Current cropped image
+            original_image: Original input image
+            
+        Returns:
+            True if we should stop cropping
+        """
+        # Calculate area ratio between current crop and original image
+        current_area = current_image.width * current_image.height
+        original_area = original_image.width * original_image.height
+        area_ratio = current_area / original_area
+        
+        # Stop if image gets too small OR if area ratio gets very small
+        min_size_reached = (current_image.width < 200 or current_image.height < 200)
+        very_focused = (area_ratio < self.convergence_threshold)
+        
+        return min_size_reached or very_focused
+    
+    def _cells_to_bbox(self, cell_ids: List[int], cell_mapping: Dict[int, Tuple[int, int, int, int]]) -> Tuple[int, int, int, int]:
+        """
+        Convert selected cells to bounding box coordinates.
+        
+        Args:
+            cell_ids: List of selected cell IDs
+            cell_mapping: Mapping from cell ID to (x, y, width, height)
+            
+        Returns:
+            Bounding box as (left, top, right, bottom)
+        """
+        if not cell_ids:
+            return (0, 0, 0, 0)
+        
+        # Find minimum x, y and maximum x+width, y+height across all selected cells
+        min_x = float('inf')
+        min_y = float('inf')
+        max_x = 0
+        max_y = 0
+        
+        for cell_id in cell_ids:
+            if cell_id in cell_mapping:
+                x, y, width, height = cell_mapping[cell_id]
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x + width)
+                max_y = max(max_y, y + height)
+        
+        return (int(min_x), int(min_y), int(max_x), int(max_y))
+    
+    def _draw_bbox_on_original(self, image: Image.Image, bbox: Tuple[int, int, int, int], confidence_category: str) -> Image.Image:
+        """
+        Draw bounding box on original image for visualization.
+        
+        Args:
+            image: Original image
+            bbox: Bounding box as (left, top, right, bottom)
+            confidence_category: Confidence category string
+            
+        Returns:
+            Image with bbox and label drawn
+        """
+        result_image = image.copy()
+        draw = ImageDraw.Draw(result_image)
+        
+        # Choose color based on confidence
+        color_map = {
+            "certain": "green",
+            "high": "blue",
+            "medium": "orange",
+            "low": "yellow",
+            "uncertain": "red"
+        }
+        color = color_map.get(confidence_category, "red")
+        
+        # Draw bounding box
+        draw.rectangle(bbox, outline=color, width=3)
+        
+        # Add confidence label
+        label = f"{confidence_category}"
+        label_x, label_y = bbox[0], max(0, bbox[1] - 25)
+        
+        try:
+            # Try to use a system font
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
+        except:
+            # Fall back to default font
+            try:
+                font = ImageFont.load_default()
+            except:
+                font = None
+        
+        # Draw label background
+        if font:
+            bbox_text = draw.textbbox((label_x, label_y), label, font=font)
+            draw.rectangle(bbox_text, fill=color)
+            draw.text((label_x, label_y), label, fill="white", font=font)
+        else:
+            draw.text((label_x, label_y), label, fill=color)
+        
+        return result_image
+    
+    def detect_multiple(self, image_path: str, object_descriptions: List[str]) -> List[Dict]:
+        """
+        Detect multiple objects in an image using multiple single-object runs.
+        
+        Args:
+            image_path: Path to input image
+            object_descriptions: List of object descriptions to detect
+            
+        Returns:
+            List of detection results, each containing object name, bounding box, and confidence
+        """
+        # 1. Load original image once
+        original_image = Image.open(image_path).convert("RGB")
+        
+        # 2. Run single detection for each object
+        detections = []
+        for i, obj_desc in enumerate(object_descriptions):
+            print(f"Detecting object {i+1}/{len(object_descriptions)}: {obj_desc}")
+            detection = self.detect(image_path, obj_desc)
+            
+            # 3. Add object identifier to result
+            detection["object"] = obj_desc
+            detection["detection_id"] = i
+            
+            # 4. Only include confident detections to reduce false positives
+            if detection["confidence"] not in ["uncertain", "low"]:
+                detections.append(detection)
+        
+        # 5. Create combined visualization image
+        if detections:
+            combined_result_image = self._draw_multiple_bboxes_on_original(
+                original_image, detections
+            )
+            combined_output_path = image_path.replace('.', '_multi_detected.')
+            combined_result_image.save(combined_output_path)
+            
+            # Add combined visualization to all detections
+            for detection in detections:
+                detection["combined_result_image_path"] = combined_output_path
+                detection["combined_result_image"] = combined_result_image
+        
+        return detections
+    
+    def _draw_multiple_bboxes_on_original(self, image: Image.Image, detections: List[Dict]) -> Image.Image:
+        """
+        Draw multiple bounding boxes on original image.
+        
+        Args:
+            image: Original image
+            detections: List of detection results with bboxes and object names
+            
+        Returns:
+            Image with all bboxes and labels drawn
+        """
+        result_image = image.copy()
+        draw = ImageDraw.Draw(result_image)
+        
+        # Color palette for different objects
+        colors = ["green", "blue", "red", "orange", "purple", "brown", "pink", "gray"]
+        
+        try:
+            # Try to use a system font
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 18)
+        except:
+            # Fall back to default font
+            try:
+                font = ImageFont.load_default()
+            except:
+                font = None
+        
+        label_y_offset = 0  # To stagger labels vertically
+        
+        for i, detection in enumerate(detections):
+            bbox = detection["bbox"]
+            obj_name = detection["object"]
+            confidence = detection["confidence"]
+            
+            # Use different color for each object
+            color = colors[i % len(colors)]
+            
+            # Draw bounding box
+            draw.rectangle(bbox, outline=color, width=3)
+            
+            # Create label with object name and confidence
+            label = f"{obj_name} ({confidence})"
+            label_x = bbox[0]
+            label_y = max(0, bbox[1] - 25 - label_y_offset)
+            
+            # Draw label background and text
+            if font:
+                bbox_text = draw.textbbox((label_x, label_y), label, font=font)
+                draw.rectangle(bbox_text, fill=color)
+                draw.text((label_x, label_y), label, fill="white", font=font)
+            else:
+                draw.text((label_x, label_y), label, fill=color)
+            
+            # Stagger next label to avoid overlap
+            label_y_offset += 30
+        
+        return result_image

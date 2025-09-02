@@ -9,15 +9,11 @@ import uuid
 from pathlib import Path
 import asyncio
 
-# Import your existing modules
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+# Import detection modules (now in same directory)
 from spatial_detector import SimpleSpatialDetector
 from ai_agent import SimpleAIAgent
 
-app = FastAPI(title="Vision Detection API", version="1.0.0")
+app = FastAPI()
 
 # Add CORS middleware
 app.add_middleware(
@@ -56,13 +52,13 @@ class ApiResponse(BaseModel):
     results: List[DetectionResult]
     message: Optional[str] = None
 
-@app.get("/")
+@app.get("/api/")
 async def root():
     return {"message": "Vision Detection API is running"}
 
 @app.post("/api/detect", response_model=ApiResponse)
 async def detect_objects(file: UploadFile = File(...), targets: str = Form(...)):
-    """Detect objects in uploaded image using existing detection logic"""
+    """Detect objects in uploaded image using actual detection logic"""
     
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
@@ -89,7 +85,7 @@ async def detect_objects(file: UploadFile = File(...), targets: str = Form(...))
         # Get detector instance
         detector_instance = get_detector()
         
-        # Run detection in thread pool
+        # Run detection in thread pool to avoid blocking
         loop = asyncio.get_event_loop()
         detections = await loop.run_in_executor(None, detector_instance.detect_multiple, str(temp_path), target_list)
         
@@ -103,9 +99,9 @@ async def detect_objects(file: UploadFile = File(...), targets: str = Form(...))
             ) for d in detections
         ]
         
-        # For serverless, we can't persist files, so we'll return base64 or use temp URLs
-        # This is a simplified version - you might want to upload to cloud storage
-        image_url = f"data:image/{file_extension.lstrip('.')};base64,processed_image"
+        # For serverless, return the image path (temporary)
+        # In production, you'd upload to cloud storage and return that URL
+        image_url = f"/uploads/{temp_filename}"
         
         return ApiResponse(
             ok=True,
@@ -119,7 +115,3 @@ async def detect_objects(file: UploadFile = File(...), targets: str = Form(...))
     finally:
         # Clean up temporary directory
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-# This is the handler that Vercel will call
-def handler(request, context):
-    return app

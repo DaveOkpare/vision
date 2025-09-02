@@ -1,16 +1,4 @@
 {
   "buildCommand": "cd ui && npm install && npm run build",
-  "outputDirectory": "ui/out",
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.py"
-    }
-  ]
+  "outputDirectory": "ui/out"
 }
