@@ -37,7 +37,42 @@ export function ImageUpload({ onFileSelected, previewUrl, setPreviewUrl, isLoadi
     handleFiles(e.target.files)
   }
 
+  const currentUrl = (resultUrl || previewUrl) as string | undefined
+
+  const filenameFromUrl = (url: string) => {
+    try {
+      const u = new URL(url, window.location.origin)
+      const parts = u.pathname.split("/")
+      return parts[parts.length - 1] || "image"
+    } catch {
+      const parts = url.split("/")
+      return parts[parts.length - 1] || "image"
+    }
+  }
+
+  const handleDownload = async (url?: string) => {
+    if (!url) return
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = blobUrl
+      const name = filenameFromUrl(url)
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(blobUrl)
+    } catch (e) {
+      // Fallback: navigate to the URL
+      window.open(url, "_blank")
+    }
+  }
+
+
   return (
+    <>
     <Card className={cn("border-dashed", isDragging && "border-ring bg-accent/30")}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
       onDragLeave={() => setIsDragging(false)}
@@ -85,13 +120,13 @@ export function ImageUpload({ onFileSelected, previewUrl, setPreviewUrl, isLoadi
                 className="mx-auto max-h-[60vh] max-w-full rounded-md border object-contain"
               />
               <div className="mt-3 flex items-center justify-center gap-3">
-                <a
-                  href={(resultUrl || previewUrl) as string}
-                  download
+                <button
+                  type="button"
+                  onClick={() => handleDownload(currentUrl)}
                   className={buttonVariants({ variant: "default", size: "default" })}
                 >
                   Download image
-                </a>
+                </button>
                 {!isLoading && (
                   <button
                     type="button"
@@ -107,5 +142,6 @@ export function ImageUpload({ onFileSelected, previewUrl, setPreviewUrl, isLoadi
         </div>
       </CardContent>
     </Card>
+    </>
   )
 }
