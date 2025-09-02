@@ -1,7 +1,5 @@
-from pydantic_ai import Agent
-from pydantic_ai.messages import ImageUrl
+from pydantic_ai import Agent, BinaryContent
 import os
-import base64
 import io
 import json
 import re
@@ -36,12 +34,11 @@ class SimpleAIAgent:
         Returns:
             Dict with 'cells' and 'confidence_scores' lists
         """
-        # Convert PIL Image to base64 data URL for multimodal input
+        # Convert PIL Image to binary content for multimodal input
         buffer = io.BytesIO()
         grid_image.save(buffer, format='PNG')
         buffer.seek(0)
-        img_base64 = base64.b64encode(buffer.read()).decode()
-        data_url = f"data:image/png;base64,{img_base64}"
+        image_data = buffer.read()
         
         # Create prompt for grid analysis
         prompt = f"""You are analyzing an image with a numbered grid overlay. Your task is to identify which grid cells contain any part of: {object_description}
@@ -65,11 +62,13 @@ Confidence guidelines:
 
 Only include cells with confidence ≥60%. Sort cell numbers in ascending order."""
 
-        # Send multimodal message using ImageUrl with data URL
+        # Send multimodal message using BinaryContent with binary data
         result = self.agent.run_sync([
             prompt,
-            ImageUrl(url=data_url)
+            BinaryContent(data=image_data, media_type='image/png')
         ])
+
+        print(result.output)
         
         # Parse the response to extract structured data
         return self._parse_response(result.output)
@@ -99,7 +98,7 @@ Only include cells with confidence ≥60%. Sort cell numbers in ascending order.
                         'cells': parsed['cells'],
                         'confidence_scores': parsed['confidence_scores']
                     }
-        except Exception as e:
+        except Exception:
             pass
         
         # Fallback: return empty response
