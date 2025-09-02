@@ -11,5 +11,5 @@
       "source": "/api/(.*)",
       "destination": "/api/index"
     }
-  ],
+  ]
 }
