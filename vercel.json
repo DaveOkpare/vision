@@ -2,8 +2,8 @@
   "buildCommand": "cd ui && npm install && npm run build",
   "outputDirectory": "ui/out",
   "functions": {
-    "api/**": {
-      "excludeFiles": "{.next,.git,node_modules}/**"
+    "api/index.py": {
+      "runtime": "python3.9"
     }
   }
 }
